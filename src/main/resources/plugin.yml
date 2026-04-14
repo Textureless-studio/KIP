@@ -1,0 +1,9 @@
+name: KIP
+description: $description
+version: '${version}'
+
+main: org.Textureless.kip.KIP
+api-version: '1.21'
+load: STARTUP
+
+authors: [ NoBodyIDK, JustEvil ]
