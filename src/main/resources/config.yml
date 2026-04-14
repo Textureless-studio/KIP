@@ -1,3 +1,9 @@
-version: 1 # Version of the config file. Do not change this unless you know what you are doing.
+#  Version of the config file. Do not change this unless you know what you are doing.
+version: 1 
 
-prefix: '&7[&6KIP&7] &r' # The prefix that will be used in all messages. You can use color codes here.
+# The prefix that will be used in all messages. You can use color codes here.
+prefix: '&7[&6KIP&7] &r'
+
+# Default profile that will be used for players who do not have a specific profile assigned to them. 
+# This should match the name of one of the profiles defined in the profiles section.
+default-profile: "default" 

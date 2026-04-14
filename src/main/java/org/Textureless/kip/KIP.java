@@ -17,6 +17,7 @@ public final class KIP extends JavaPlugin {
     @Override
     public void onEnable() {
         saveResource("config.yml", false);
+        saveResource("profiles.yml", false);
         saveDefaultConfig();
 
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
@@ -33,4 +34,5 @@ public final class KIP extends JavaPlugin {
         // Plugin shutdown logic
         getComponentLogger().info(Component.text("KIP has been disabled!").color(NamedTextColor.RED));
     }
+
 }

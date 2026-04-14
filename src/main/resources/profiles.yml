@@ -1,0 +1,72 @@
+# Default Profile config
+
+default:
+  display:
+    permission: "kip.group.default"
+    priority: 0
+  options:
+    armor-lost-percentage: 3
+    experience-lost-percentage: 5
+    keep-items: 
+      1:
+        material: "DIAMOND_SWORD"
+        percentage: 50
+        model-data: 0
+      2:
+        material: "IRON_SWORD"
+        percentage: 100
+      3:
+        material: "GOLDEN_SWORD"
+        condition:
+          enchantments:
+            1:
+              type: "DAMAGE_ALL"
+              level: 5
+    give-items:
+      1:
+        type: "ITEM"
+        material: "PAPER"
+        amount: 1
+        name: "%player_name%'s Death Note"
+        lore:
+          - "This is a special item given to you upon death."
+          - "Use it wisely!"
+      2:
+        type: "COMMAND"
+        command: "give {player} diamond_sword 1"
+
+
+vip:
+  display:
+    permission: "kip.group.vip"
+    priority: 1
+  options:
+    armor-lost-percentage: 1
+    experience-lost-percentage: 2
+    keep-items: 
+      1:
+        material: "DIAMOND_SWORD"
+        percentage: 100
+        model-data: 0
+      2:
+        material: "IRON_SWORD"
+        percentage: 100
+      3:
+        material: "GOLDEN_SWORD"
+        condition:
+          enchantments:
+            1:
+              type: "DAMAGE_ALL"
+              level: 5
+    give-items:
+      1:
+        type: "ITEM"
+        material: "PAPER"
+        amount: 1
+        name: "%player_name%'s VIP Death Note"
+        lore:
+          - "This is a special item given to you upon death as a VIP."
+          - "Use it wisely!"
+      2:
+        type: "COMMAND"
+        command: "give {player} diamond_sword 1"
