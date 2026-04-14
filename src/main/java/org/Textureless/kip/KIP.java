@@ -21,7 +21,7 @@ public final class KIP extends JavaPlugin {
 
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             for (KIPCommand command : commands) {
-                event.registrar().register(command.register().build(), command.getDescription());
+                event.registrar().register(command.build(), command.getDescription());
             }
         });
 

@@ -12,7 +12,6 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.Textureless.kip.KIP;
 import org.Textureless.kip.builders.KIPCommand;
 import org.bukkit.command.CommandSender;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -24,7 +23,6 @@ public class HelloCommand extends KIPCommand {
         super("hello", "Says hello to a player");
     }
 
-    @Override
     public LiteralArgumentBuilder<CommandSourceStack> register() {
         return Commands.literal(this.getName())
                 .then(Commands.argument("target", ArgumentTypes.player())
