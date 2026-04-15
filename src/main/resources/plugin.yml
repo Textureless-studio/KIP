@@ -9,6 +9,9 @@ load: STARTUP
 authors: [ NoBodyIDK, JustEvil ]
 
 permissions:
-  KIP.group.default:
+  kip.group.default:
     description: "Default group permission for default users."
     default: true
+  kip.command.reload:
+    description: "Allows using /kip reload"
+    default: op
