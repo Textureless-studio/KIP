@@ -5,13 +5,6 @@ version: '${version}'
 main: org.Textureless.kip.KIP
 api-version: '1.21'
 load: STARTUP
+softdepend: [PlaceholderAPI]
 
 authors: [ NoBodyIDK, JustEvil ]
-
-permissions:
-  kip.group.default:
-    description: "Default group permission for default users."
-    default: true
-  kip.command.reload:
-    description: "Allows using /kip reload"
-    default: op

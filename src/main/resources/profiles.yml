@@ -1,72 +1,91 @@
-# Default Profile config
+# ------------------------------------------------------------
+# KIP - profiles.yml
+# ------------------------------------------------------------
+# Quick guide
+# - Each root node (default, vip, etc.) is a profile.
+# - A player can match multiple profiles via permissions.
+# - Profiles are processed by priority (lower -> higher).
+#   Example: default(0) + vip(1) means both are applied.
+# - keep-items rules are cumulative across matched profiles.
+# - KIP Support PlaceholderAPI if installed.
+# ------------------------------------------------------------
 
+
+# Profile names are arbitrary identifiers for different sets of death rules. 
+# Can be named anything (e.g., default, vip, elite) and each profile can have its own rules and permissions.
 default:
+  # Base profile. Usually applies to regular/default players.
   display:
-    permission: "kip.group.default"
-    priority: 0
+    permission: "kip.group.default" # Permission required for this profile
+    priority: 0                      # Lower number = higher priority (applied first)
   options:
-    armor-lost-percentage: 3
-    experience-lost-percentage: 5
+    armor-lost-percentage: 3      # Percent of armor durability to lose on death
+    experience-lost-percentage: 5 # Percent of dropped XP to lose on death
+
+    # Keep rules for death drops.
+    # If set to true, keep inventory is enabled and no items are dropped.
     keep-items: 
       1:
-        material: "DIAMOND_SWORD"
-        percentage: 50
-        model-data: 0
+        material: "DIAMOND_SWORD" # Item material to match. Check list here: https://hub.spigotmc.org/javadocs/spigot/org/bukkit/Material.html
+        percentage: 50             # Chance to keep this item
+        model-data: 0              # Custom model data. Optional. If specified, must match for rule to apply.
       2:
         material: "IRON_SWORD"
-        percentage: 100
+        percentage: 100            # Always keep if material matches
       3:
         material: "GOLDEN_SWORD"
-        condition:
+        condition: # Conditional rule. All conditions must be met for rule to apply.
+        # Types of conditions:
+        # - enchantments: Requires specific enchantments
+        # - nameEquals: Requires specific item name
+        # - loreContains: Requires specific lore line (string or list)
+        # - expression: Evaluates javascripts or comparisons (>, <, >=, <=, ==, !=)
+        #   Supports placeholders if PlaceholderAPI is installed.
           enchantments:
             1:
-              type: "DAMAGE_ALL"
-              level: 5
+              type: "DAMAGE_ALL" # Sharpness (legacy alias)
+              level: 5            # Minimum required enchant level
+          nameEquals: "Excalibur"
+          loreContains:
+            - "Bound to %player_name%"
+          expression: "%player_level% >= 30"
+
+    # Rewards granted on death. (Optional)
     give-items:
       1:
-        type: "ITEM"
+        # Reward types:
+        # - ITEM: Give a custom item to the player
+        # - COMMAND: Execute a console command ({player} refers to the player's name, no required placeholder API)
+        # - MESSAGE: Send a custom message to the player
+        type: "ITEM"                      # Give a custom item reward
         material: "PAPER"
         amount: 1
-        name: "%player_name%'s Death Note"
+        name: "%player_name%'s Death Note" # Supports placeholders
         lore:
           - "This is a special item given to you upon death."
           - "Use it wisely!"
       2:
-        type: "COMMAND"
+        type: "COMMAND"                    # Execute command as console
         command: "give {player} diamond_sword 1"
-
-
-vip:
-  display:
-    permission: "kip.group.vip"
-    priority: 1
-  options:
-    armor-lost-percentage: 1
-    experience-lost-percentage: 2
-    keep-items: 
-      1:
-        material: "DIAMOND_SWORD"
-        percentage: 100
-        model-data: 0
-      2:
-        material: "IRON_SWORD"
-        percentage: 100
       3:
-        material: "GOLDEN_SWORD"
-        condition:
-          enchantments:
-            1:
-              type: "DAMAGE_ALL"
-              level: 5
-    give-items:
-      1:
-        type: "ITEM"
-        material: "PAPER"
-        amount: 1
-        name: "%player_name%'s VIP Death Note"
-        lore:
-          - "This is a special item given to you upon death as a VIP."
-          - "Use it wisely!"
-      2:
-        type: "COMMAND"
-        command: "give {player} diamond_sword 1"
+        # MESSAGE supports:
+        # - message: single plain-text line
+        # - messages: multiple plain-text lines
+        # - minmessage: single MiniMessage line
+        # - minmessages: multiple MiniMessage lines
+        type: "MESSAGE"
+        minmessages:
+          - "<green>You died, <white>%player_name%</white>!</green>"
+          - "<gray>Keep calm and keep fighting.</gray>"
+
+
+admin:
+  display:
+    permission: "kip.group.admin"
+  options:
+    armor-lost-percentage: 0
+    experience-lost-percentage: 0
+    keep-items: true
+    give-items: []
+
+# Can add as many profiles as needed, each with its own rules and permissions.
