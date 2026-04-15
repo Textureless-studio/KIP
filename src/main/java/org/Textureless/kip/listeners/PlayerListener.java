@@ -14,6 +14,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -23,10 +24,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.Random;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -41,7 +42,8 @@ public class PlayerListener implements Listener {
     private final KeepItemRuleMatcher keepItemRuleMatcher;
     private final PlaceholderParser placeholderParser;
     private final MiniMessage miniMessage;
-    private final Map<UUID, Map<EquipmentSlot, ItemStack>> respawnArmorByPlayer;
+    private final Map<UUID, List<PendingReward>> pendingRewardsByPlayer;
+    private final Map<UUID, Map<EquipmentSlot, ItemStack>> armorToEquipOnRespawn;
 
     public PlayerListener(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -51,7 +53,8 @@ public class PlayerListener implements Listener {
         this.keepItemRuleMatcher = new KeepItemRuleMatcher();
         this.placeholderParser = new PlaceholderParser();
         this.miniMessage = MiniMessage.miniMessage();
-        this.respawnArmorByPlayer = new HashMap<>();
+        this.pendingRewardsByPlayer = new HashMap<>();
+        this.armorToEquipOnRespawn = new HashMap<>();
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -75,7 +78,7 @@ public class PlayerListener implements Listener {
         keepEquippedArmorWithDurabilityLoss(player, event, primaryOptions);
 
         applyKeepItems(player, event, optionsSections);
-        applyGiveItems(player, optionsSections);
+        queueGiveItemsForRespawn(player, optionsSections);
     }
 
     private List<ConfigurationSection> extractOptionsSections(List<ConfigurationSection> profiles) {
@@ -101,15 +104,17 @@ public class PlayerListener implements Listener {
                                                      PlayerDeathEvent event,
                                                      ConfigurationSection options) {
         double lostPercentage = normalizePercentage(options.getDouble("armor-lost-percentage", 100.0));
-        Map<EquipmentSlot, ItemStack> armorToEquipOnRespawn = new EnumMap<>(EquipmentSlot.class);
+        Map<EquipmentSlot, ItemStack> equippedArmor = new EnumMap<>(EquipmentSlot.class);
 
-        addArmorPiece(armorToEquipOnRespawn, EquipmentSlot.HEAD, player.getInventory().getHelmet());
-        addArmorPiece(armorToEquipOnRespawn, EquipmentSlot.CHEST, player.getInventory().getChestplate());
-        addArmorPiece(armorToEquipOnRespawn, EquipmentSlot.LEGS, player.getInventory().getLeggings());
-        addArmorPiece(armorToEquipOnRespawn, EquipmentSlot.FEET, player.getInventory().getBoots());
+        addArmorPiece(equippedArmor, EquipmentSlot.HEAD, player.getInventory().getHelmet());
+        addArmorPiece(equippedArmor, EquipmentSlot.CHEST, player.getInventory().getChestplate());
+        addArmorPiece(equippedArmor, EquipmentSlot.LEGS, player.getInventory().getLeggings());
+        addArmorPiece(equippedArmor, EquipmentSlot.FEET, player.getInventory().getBoots());
 
-        for (Map.Entry<EquipmentSlot, ItemStack> armorPiece : armorToEquipOnRespawn.entrySet()) {
-            ItemStack equippedPiece = armorPiece.getValue();
+        Map<EquipmentSlot, ItemStack> armorToRespawn = new EnumMap<>(EquipmentSlot.class);
+        
+        for (Map.Entry<EquipmentSlot, ItemStack> armorEntry : equippedArmor.entrySet()) {
+            ItemStack equippedPiece = armorEntry.getValue();
             if (equippedPiece == null || equippedPiece.getType().isAir() || !(equippedPiece.getItemMeta() instanceof Damageable)) {
                 continue;
             }
@@ -117,13 +122,18 @@ public class PlayerListener implements Listener {
             removeOneMatchingDrop(event, equippedPiece);
 
             ItemStack keptPiece = equippedPiece.clone();
-            if (!applyArmorDurabilityLoss(keptPiece, lostPercentage)) {
-                armorToEquipOnRespawn.put(armorPiece.getKey(), keptPiece);
+            boolean broke = applyArmorDurabilityLoss(keptPiece, lostPercentage);
+            if (broke) {
+                logger.info("Armor broke after durability loss: " + keptPiece.getType());
+                continue;
             }
+            
+            logger.info("Keeping armor with durability loss: " + keptPiece.getType());
+            armorToRespawn.put(armorEntry.getKey(), keptPiece);
         }
-
-        if (!armorToEquipOnRespawn.isEmpty()) {
-            respawnArmorByPlayer.put(player.getUniqueId(), armorToEquipOnRespawn);
+        
+        if (!armorToRespawn.isEmpty()) {
+            armorToEquipOnRespawn.put(player.getUniqueId(), armorToRespawn);
         }
     }
 
@@ -143,12 +153,16 @@ public class PlayerListener implements Listener {
             }
 
             if (droppedItem.getAmount() <= target.getAmount()) {
+                logger.info("Removed armor drop: " + droppedItem.getType() + " (full item)");
                 iterator.remove();
             } else {
-                droppedItem.setAmount(droppedItem.getAmount() - target.getAmount());
+                int remaining = droppedItem.getAmount() - target.getAmount();
+                logger.info("Reduced armor drop: " + droppedItem.getType() + " from " + droppedItem.getAmount() + " to " + remaining);
+                droppedItem.setAmount(remaining);
             }
             return;
         }
+        logger.warning("Could not find matching drop for armor: " + target.getType());
     }
 
     private boolean applyArmorDurabilityLoss(ItemStack itemStack, double lostPercentage) {
@@ -204,7 +218,9 @@ public class PlayerListener implements Listener {
         return false;
     }
 
-    private void applyGiveItems(Player player, List<ConfigurationSection> optionsSections) {
+    private void queueGiveItemsForRespawn(Player player, List<ConfigurationSection> optionsSections) {
+        List<PendingReward> pendingRewards = new ArrayList<>();
+
         for (ConfigurationSection options : optionsSections) {
             ConfigurationSection giveItems = options.getConfigurationSection("give-items");
             if (giveItems == null) {
@@ -219,20 +235,70 @@ public class PlayerListener implements Listener {
 
                 String type = rule.getString("type", "");
                 if ("COMMAND".equalsIgnoreCase(type)) {
-                    executeCommandReward(player, rule);
+                    pendingRewards.add(targetPlayer -> executeCommandReward(targetPlayer, rule));
                     continue;
                 }
 
                 if ("ITEM".equalsIgnoreCase(type)) {
-                    giveItemReward(player, rule);
+                    pendingRewards.add(targetPlayer -> giveItemReward(targetPlayer, rule));
                     continue;
                 }
 
                 if ("MESSAGE".equalsIgnoreCase(type)) {
-                    sendMessageReward(player, rule);
+                    pendingRewards.add(targetPlayer -> sendMessageReward(targetPlayer, rule));
                 }
             }
         }
+
+        if (!pendingRewards.isEmpty()) {
+            pendingRewardsByPlayer.put(player.getUniqueId(), pendingRewards);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        Player player = event.getPlayer();
+        UUID playerUuid = player.getUniqueId();
+        
+
+        Map<EquipmentSlot, ItemStack> armorToEquip = armorToEquipOnRespawn.remove(playerUuid);
+        if (armorToEquip != null && !armorToEquip.isEmpty()) {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                for (Map.Entry<EquipmentSlot, ItemStack> entry : armorToEquip.entrySet()) {
+                    switch (entry.getKey()) {
+                        case HEAD -> player.getInventory().setHelmet(entry.getValue());
+                        case CHEST -> player.getInventory().setChestplate(entry.getValue());
+                        case LEGS -> player.getInventory().setLeggings(entry.getValue());
+                        case FEET -> player.getInventory().setBoots(entry.getValue());
+                        default -> {}
+                    }
+                }
+            });
+        }
+        List<PendingReward> pendingRewards = pendingRewardsByPlayer.remove(playerUuid);
+        if (pendingRewards == null || pendingRewards.isEmpty()) {
+            return;
+        }
+
+        logger.info("[DEATH-REWARD] Queued " + pendingRewards.size() + " rewards for " + player.getName() + ", will execute in 5 ticks");
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            Player respawnedPlayer = event.getPlayer();
+            if (respawnedPlayer == null || !respawnedPlayer.isOnline()) {
+                logger.warning("[DEATH-REWARD] Player " + (respawnedPlayer == null ? "NULL" : respawnedPlayer.getName()) + " is null or offline when executing pending rewards");
+                return;
+            }
+            logger.info("[DEATH-REWARD] Executing " + pendingRewards.size() + " pending rewards for " + respawnedPlayer.getName());
+            for (PendingReward pendingReward : pendingRewards) {
+                pendingReward.apply(respawnedPlayer);
+            }
+        }, 5L);
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        UUID playerUuid = event.getPlayer().getUniqueId();
+        pendingRewardsByPlayer.remove(playerUuid);
+        armorToEquipOnRespawn.remove(playerUuid);
     }
 
     private void executeCommandReward(Player player, ConfigurationSection rule) {
@@ -242,6 +308,7 @@ public class PlayerListener implements Listener {
         }
 
         String parsedCommand = placeholderParser.parse(player, command).replace("{player}", player.getName());
+        logger.info("[REWARD] Executing command: " + parsedCommand);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsedCommand);
     }
 
@@ -250,6 +317,11 @@ public class PlayerListener implements Listener {
         Material material = Material.matchMaterial(materialName);
         if (material == null) {
             logger.warning("Invalid material in give-items: " + materialName);
+            return;
+        }
+
+        if (!player.isOnline()) {
+            logger.warning("Player " + player.getName() + " is offline when trying to give item reward");
             return;
         }
 
@@ -271,12 +343,16 @@ public class PlayerListener implements Listener {
             reward.setItemMeta(itemMeta);
         }
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            var leftovers = player.getInventory().addItem(reward);
+        logger.info("[REWARD] Giving item to " + player.getName() + ": " + reward.getType() + " x" + reward.getAmount());
+        var leftovers = player.getInventory().addItem(reward);
+        if (leftovers.isEmpty()) {
+            logger.info("[REWARD] Item successfully added to inventory of " + player.getName());
+        } else {
+            logger.info("[REWARD] Item partially given to " + player.getName() + ", dropping " + leftovers.size() + " stacks");
             for (ItemStack leftover : leftovers.values()) {
                 player.getWorld().dropItemNaturally(player.getLocation(), leftover);
             }
-        });
+        }
     }
 
     private void sendMessageReward(Player player, ConfigurationSection rule) {
@@ -305,28 +381,12 @@ public class PlayerListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerRespawn(PlayerRespawnEvent event) {
-        Map<EquipmentSlot, ItemStack> armorToEquip = respawnArmorByPlayer.remove(event.getPlayer().getUniqueId());
-        if (armorToEquip == null || armorToEquip.isEmpty()) {
-            return;
-        }
-
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            for (Map.Entry<EquipmentSlot, ItemStack> armorPiece : armorToEquip.entrySet()) {
-                switch (armorPiece.getKey()) {
-                    case HEAD -> event.getPlayer().getInventory().setHelmet(armorPiece.getValue());
-                    case CHEST -> event.getPlayer().getInventory().setChestplate(armorPiece.getValue());
-                    case LEGS -> event.getPlayer().getInventory().setLeggings(armorPiece.getValue());
-                    case FEET -> event.getPlayer().getInventory().setBoots(armorPiece.getValue());
-                    default -> {
-                    }
-                }
-            }
-        });
-    }
-
     private double normalizePercentage(double value) {
         return Math.max(0.0, Math.min(100.0, value));
+    }
+
+    @FunctionalInterface
+    private interface PendingReward {
+        void apply(Player player);
     }
 }
