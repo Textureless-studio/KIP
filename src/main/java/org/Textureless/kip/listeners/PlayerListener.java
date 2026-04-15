@@ -14,15 +14,21 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Random;
+import java.util.UUID;
 import java.util.logging.Logger;
 
 public class PlayerListener implements Listener {
@@ -35,6 +41,7 @@ public class PlayerListener implements Listener {
     private final KeepItemRuleMatcher keepItemRuleMatcher;
     private final PlaceholderParser placeholderParser;
     private final MiniMessage miniMessage;
+    private final Map<UUID, Map<EquipmentSlot, ItemStack>> respawnArmorByPlayer;
 
     public PlayerListener(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -44,6 +51,7 @@ public class PlayerListener implements Listener {
         this.keepItemRuleMatcher = new KeepItemRuleMatcher();
         this.placeholderParser = new PlaceholderParser();
         this.miniMessage = MiniMessage.miniMessage();
+        this.respawnArmorByPlayer = new HashMap<>();
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -64,15 +72,7 @@ public class PlayerListener implements Listener {
 
         ConfigurationSection primaryOptions = optionsSections.getLast();
         applyExperienceLoss(event, primaryOptions);
-        boolean keepInventory = shouldKeepInventory(optionsSections);
-        applyArmorDurabilityLoss(player, event, primaryOptions, keepInventory);
-
-        if (keepInventory) {
-            event.setKeepInventory(true);
-            event.getDrops().clear();
-            applyGiveItems(player, optionsSections);
-            return;
-        }
+        keepEquippedArmorWithDurabilityLoss(player, event, primaryOptions);
 
         applyKeepItems(player, event, optionsSections);
         applyGiveItems(player, optionsSections);
@@ -97,56 +97,62 @@ public class PlayerListener implements Listener {
         event.setDroppedExp(Math.max(0, adjustedExp));
     }
 
-    private void applyArmorDurabilityLoss(Player player,
-                                          PlayerDeathEvent event,
-                                          ConfigurationSection options,
-                                          boolean keepInventory) {
+    private void keepEquippedArmorWithDurabilityLoss(Player player,
+                                                     PlayerDeathEvent event,
+                                                     ConfigurationSection options) {
         double lostPercentage = normalizePercentage(options.getDouble("armor-lost-percentage", 100.0));
-        if (lostPercentage <= 0.0) {
-            return;
-        }
+        Map<EquipmentSlot, ItemStack> armorToEquipOnRespawn = new EnumMap<>(EquipmentSlot.class);
 
-        if (keepInventory) {
-            applyArmorDurabilityLossToEquipment(player, lostPercentage);
-            return;
-        }
+        addArmorPiece(armorToEquipOnRespawn, EquipmentSlot.HEAD, player.getInventory().getHelmet());
+        addArmorPiece(armorToEquipOnRespawn, EquipmentSlot.CHEST, player.getInventory().getChestplate());
+        addArmorPiece(armorToEquipOnRespawn, EquipmentSlot.LEGS, player.getInventory().getLeggings());
+        addArmorPiece(armorToEquipOnRespawn, EquipmentSlot.FEET, player.getInventory().getBoots());
 
-        for (Iterator<ItemStack> iterator = event.getDrops().iterator(); iterator.hasNext(); ) {
-            ItemStack itemStack = iterator.next();
-            if (!isArmor(itemStack.getType())) {
+        for (Map.Entry<EquipmentSlot, ItemStack> armorPiece : armorToEquipOnRespawn.entrySet()) {
+            ItemStack equippedPiece = armorPiece.getValue();
+            if (equippedPiece == null || equippedPiece.getType().isAir() || !(equippedPiece.getItemMeta() instanceof Damageable)) {
                 continue;
             }
 
-            if (applyArmorDurabilityLoss(itemStack, lostPercentage)) {
-                iterator.remove();
+            removeOneMatchingDrop(event, equippedPiece);
+
+            ItemStack keptPiece = equippedPiece.clone();
+            if (!applyArmorDurabilityLoss(keptPiece, lostPercentage)) {
+                armorToEquipOnRespawn.put(armorPiece.getKey(), keptPiece);
             }
+        }
+
+        if (!armorToEquipOnRespawn.isEmpty()) {
+            respawnArmorByPlayer.put(player.getUniqueId(), armorToEquipOnRespawn);
         }
     }
 
-    private void applyArmorDurabilityLossToEquipment(Player player, double lostPercentage) {
-        ItemStack helmet = player.getInventory().getHelmet();
-        if (applyArmorDurabilityLoss(helmet, lostPercentage)) {
-            player.getInventory().setHelmet(null);
+    private void addArmorPiece(Map<EquipmentSlot, ItemStack> armorPieces,
+                               EquipmentSlot slot,
+                               ItemStack itemStack) {
+        if (itemStack != null) {
+            armorPieces.put(slot, itemStack);
         }
+    }
 
-        ItemStack chestplate = player.getInventory().getChestplate();
-        if (applyArmorDurabilityLoss(chestplate, lostPercentage)) {
-            player.getInventory().setChestplate(null);
-        }
+    private void removeOneMatchingDrop(PlayerDeathEvent event, ItemStack target) {
+        for (Iterator<ItemStack> iterator = event.getDrops().iterator(); iterator.hasNext(); ) {
+            ItemStack droppedItem = iterator.next();
+            if (!droppedItem.isSimilar(target)) {
+                continue;
+            }
 
-        ItemStack leggings = player.getInventory().getLeggings();
-        if (applyArmorDurabilityLoss(leggings, lostPercentage)) {
-            player.getInventory().setLeggings(null);
-        }
-
-        ItemStack boots = player.getInventory().getBoots();
-        if (applyArmorDurabilityLoss(boots, lostPercentage)) {
-            player.getInventory().setBoots(null);
+            if (droppedItem.getAmount() <= target.getAmount()) {
+                iterator.remove();
+            } else {
+                droppedItem.setAmount(droppedItem.getAmount() - target.getAmount());
+            }
+            return;
         }
     }
 
     private boolean applyArmorDurabilityLoss(ItemStack itemStack, double lostPercentage) {
-        if (itemStack == null || itemStack.getType().isAir() || !isArmor(itemStack.getType())) {
+        if (itemStack == null || itemStack.getType().isAir()) {
             return false;
         }
 
@@ -229,23 +235,13 @@ public class PlayerListener implements Listener {
         }
     }
 
-    private boolean shouldKeepInventory(List<ConfigurationSection> optionsSections) {
-        for (ConfigurationSection options : optionsSections) {
-            if (Boolean.TRUE.equals(options.get("keep-items"))) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private void executeCommandReward(Player player, ConfigurationSection rule) {
         String command = rule.getString("command", "");
         if (command.isBlank()) {
             return;
         }
 
-        String parsedCommand = placeholderParser.parse(player, command);
+        String parsedCommand = placeholderParser.parse(player, command).replace("{player}", player.getName());
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsedCommand);
     }
 
@@ -309,20 +305,28 @@ public class PlayerListener implements Listener {
         }
     }
 
-    private double normalizePercentage(double value) {
-        return Math.max(0.0, Math.min(100.0, value));
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        Map<EquipmentSlot, ItemStack> armorToEquip = respawnArmorByPlayer.remove(event.getPlayer().getUniqueId());
+        if (armorToEquip == null || armorToEquip.isEmpty()) {
+            return;
+        }
+
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            for (Map.Entry<EquipmentSlot, ItemStack> armorPiece : armorToEquip.entrySet()) {
+                switch (armorPiece.getKey()) {
+                    case HEAD -> event.getPlayer().getInventory().setHelmet(armorPiece.getValue());
+                    case CHEST -> event.getPlayer().getInventory().setChestplate(armorPiece.getValue());
+                    case LEGS -> event.getPlayer().getInventory().setLeggings(armorPiece.getValue());
+                    case FEET -> event.getPlayer().getInventory().setBoots(armorPiece.getValue());
+                    default -> {
+                    }
+                }
+            }
+        });
     }
 
-    private boolean isArmor(Material material) {
-        return switch (material) {
-            case LEATHER_HELMET, LEATHER_CHESTPLATE, LEATHER_LEGGINGS, LEATHER_BOOTS,
-                    CHAINMAIL_HELMET, CHAINMAIL_CHESTPLATE, CHAINMAIL_LEGGINGS, CHAINMAIL_BOOTS,
-                    IRON_HELMET, IRON_CHESTPLATE, IRON_LEGGINGS, IRON_BOOTS,
-                    GOLDEN_HELMET, GOLDEN_CHESTPLATE, GOLDEN_LEGGINGS, GOLDEN_BOOTS,
-                    DIAMOND_HELMET, DIAMOND_CHESTPLATE, DIAMOND_LEGGINGS, DIAMOND_BOOTS,
-                    NETHERITE_HELMET, NETHERITE_CHESTPLATE, NETHERITE_LEGGINGS, NETHERITE_BOOTS,
-                    TURTLE_HELMET -> true;
-            default -> false;
-        };
+    private double normalizePercentage(double value) {
+        return Math.max(0.0, Math.min(100.0, value));
     }
 }

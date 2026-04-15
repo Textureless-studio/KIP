@@ -24,10 +24,17 @@ public class ReloadCommand extends KIPCommand {
     @Override
     protected void configure(LiteralArgumentBuilder<CommandSourceStack> builder) {
         builder.executes(ctx -> {
-            Component prefix = PrefixUtil.prefix(JavaPlugin.getPlugin(KIP.class));
+            KIP plugin = JavaPlugin.getPlugin(KIP.class);
+            Component prefix = PrefixUtil.prefix(plugin);
 
             ctx.getSource().getSender().sendMessage(
                     prefix.append(Component.text("Reloading...").color(NamedTextColor.YELLOW))
+            );
+
+            plugin.reloadConfig();
+
+            ctx.getSource().getSender().sendMessage(
+                    prefix.append(Component.text("Reload complete.").color(NamedTextColor.GREEN))
             );
 
             return Command.SINGLE_SUCCESS;
