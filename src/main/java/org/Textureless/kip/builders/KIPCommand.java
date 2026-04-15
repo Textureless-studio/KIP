@@ -5,9 +5,11 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public abstract class KIPCommand {
     private final CommandMeta meta;
@@ -50,11 +52,7 @@ public abstract class KIPCommand {
     private LiteralArgumentBuilder<CommandSourceStack> buildLiteral(String literalName) {
         LiteralArgumentBuilder<CommandSourceStack> builder = literal(literalName);
         configure(builder);
-        for (KIPCommand subcommand : subcommands()) {
-            for (LiteralArgumentBuilder<CommandSourceStack> childLiteral : subcommand.literals()) {
-                builder.then(childLiteral);
-            }
-        }
+        subcommands().stream().flatMap(subcommand -> subcommand.literals().stream()).forEach(builder::then);
         return builder;
     }
 
@@ -63,20 +61,11 @@ public abstract class KIPCommand {
     }
 
     public final List<LiteralArgumentBuilder<CommandSourceStack>> literals() {
-        List<LiteralArgumentBuilder<CommandSourceStack>> builders = new ArrayList<>();
-        builders.add(buildLiteral(name()));
-        for (String alias : aliases()) {
-            builders.add(buildLiteral(alias));
-        }
-        return List.copyOf(builders);
+        return Stream.concat(Stream.of(name()), aliases().stream()).map(this::buildLiteral).toList();
     }
 
     public final List<LiteralCommandNode<CommandSourceStack>> nodes() {
-        List<LiteralCommandNode<CommandSourceStack>> nodes = new ArrayList<>();
-        for (LiteralArgumentBuilder<CommandSourceStack> literal : literals()) {
-            nodes.add(literal.build());
-        }
-        return List.copyOf(nodes);
+        return literals().stream().map(LiteralArgumentBuilder::build).toList();
     }
 
     protected static CommandMeta.Builder meta(String name) {
@@ -99,31 +88,32 @@ public abstract class KIPCommand {
             }
 
             public Builder description(String description) {
-                this.description = description;
+                this.description = normalizeText(description);
                 return this;
             }
 
             public Builder permission(String permission) {
-                this.permission = permission;
+                this.permission = normalizeText(permission);
                 return this;
             }
 
             public Builder aliases(String... aliases) {
-                this.aliases = Arrays.stream(aliases)
-                        .filter(alias -> alias != null && !alias.isBlank())
-                        .map(String::trim)
-                        .distinct()
-                        .toList();
+                this.aliases = normalizeAliases(aliases);
                 return this;
             }
 
             public CommandMeta build() {
-                return new CommandMeta(
-                        name,
-                        description == null ? "" : description,
-                        permission == null ? "" : permission,
-                        List.copyOf(aliases)
-                );
+                return new CommandMeta(name, description, permission, List.copyOf(aliases));
+            }
+
+            private static String normalizeText(String value) {
+                return value == null ? "" : value;
+            }
+
+            private static List<String> normalizeAliases(String... aliases) {
+                if (aliases == null) return List.of();
+                LinkedHashSet<String> normalized = Arrays.stream(aliases).filter(alias -> alias != null && !alias.isBlank()).map(String::trim).collect(Collectors.toCollection(LinkedHashSet::new));
+                return List.copyOf(normalized);
             }
         }
     }

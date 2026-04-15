@@ -9,7 +9,6 @@ public class KipRootCommand extends KIPCommand {
         super(
                 meta("kip")
                         .description("Main KIP command")
-                        .aliases("k")
                         .build()
         );
     }
