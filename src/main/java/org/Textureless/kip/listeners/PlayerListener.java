@@ -307,7 +307,7 @@ public class PlayerListener implements Listener {
             return;
         }
 
-        String parsedCommand = placeholderParser.parse(player, command).replace("{player}", player.getName());
+        String parsedCommand = placeholderParser.parse(player, command);
         logger.info("[REWARD] Executing command: " + parsedCommand);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsedCommand);
     }

@@ -9,25 +9,25 @@ import java.util.List;
 
 public final class PlaceholderParser {
 
-    private final boolean placeholderApiEnabled;
-
-    public PlaceholderParser() {
-        this.placeholderApiEnabled = Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI");
-    }
 
     public String parse(Player player, String input) {
+        var logger = Bukkit.getLogger();
+
         if (input == null || input.isBlank()) {
             return "";
         }
 
         String parsed = input.replace("{player}", player.getName());
-        if (!placeholderApiEnabled) {
+        if (!Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+            logger.warning("PlaceholderAPI is not enabled. Placeholders will not be parsed.");
             return parsed;
         }
 
         try {
             return PlaceholderAPI.setPlaceholders(player, parsed);
         } catch (NoClassDefFoundError ignored) {
+            logger.warning("Failed to parse placeholders for player " + player.getName() + ".");
+
             return parsed;
         }
     }
